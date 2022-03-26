@@ -73,6 +73,7 @@ public class CreditLinks extends GraphProperty {
 	 */
 	
 	public boolean setWeight(int src, int dst, double sub) {
+		//System.out.println("update "+src+" "+dst);
 		if (src < dst){
 			double[] ws = this.weights.get(new Edge(src,dst));
 			double dn = ws[1]+sub;

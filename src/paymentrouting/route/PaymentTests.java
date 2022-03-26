@@ -18,7 +18,7 @@ public class PaymentTests {
 
 	public static void main(String[] args) {
 		Config.overwrite("SKIP_EXISTING_DATA_FOLDERS", ""+false);//run even if results already exist 
-		//runSimpleTestSynthetic(); 
+		runSimpleTestSynthetic();
 	    System.out.println(1524000/(1000*60)); 
 	}
 	
@@ -48,9 +48,9 @@ public class PaymentTests {
 	public static void runSimpleTestSynthetic() {
 		Config.overwrite("SERIES_GRAPH_WRITE", ""+true);
         //generate transformations to add i) capacities and ii) transactions 
-		Transformation[] trans = new Transformation[] { new InitCapacities(200, -1, BalDist.EXP), 
+		Transformation[] trans = new Transformation[] { new InitCapacities(200, -1, BalDist.EXP),
 				//exponentially distributed capacities with average value 200 (middle value is variance, which is not relevant for exponential)
-				new Transactions(20, -1, TransDist.EXP, false, 15, true, false) 
+				new Transactions(20, -1, TransDist.EXP, false, 150, true, false)
 				// 15 transactions with expontially distributed values with average 20 (again -1 is variance, not needed for exp), 
 				//no cutoff, no concrete timestamp, no restriction to transactions guaranteed to be successful 
 		        };
@@ -69,8 +69,8 @@ public class PaymentTests {
 				new RoutePayment(new SplitClosest(hop), trials, up), // split by dist, HopDistance
 				new RoutePayment(new SplitClosest(speedyMulti), trials, up), // split by dist, Interdimensional
 																				// SpeedyMurmurs
-				new RoutePayment(new RandomSplit(hop), trials, up), // random splitting, HopDistance
-				new RoutePayment(new RandomSplit(speedyMulti), trials, up) // random splitting, Interdimensional
+				//new RoutePayment(new RandomSplit(hop), trials, up), // random splitting, HopDistance
+				//new RoutePayment(new RandomSplit(speedyMulti), trials, up) // random splitting, Interdimensional
 																			// SpeedyMurmurs
 		};
 		//run 
