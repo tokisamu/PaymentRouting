@@ -67,21 +67,21 @@ public class Evaluation {
 		//execute simulation: colluding and non-colluding with the two splitting methods explored in the paper and the two delays defined above
 		int index = 0; 
 		for (int i = 0; i < 11; i++){
-			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay1),trials, up);
-			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay1),trials, up);	
-			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay2),trials, up);
-			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay2),trials, up);
-			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay1),trials, up);
-			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay1),trials, up);	
-			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay2),trials, up);
-			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay2),trials, up);
+			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay1),trials, up,0);
+			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay1),trials, up,0);	
+			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay2),trials, up,0);
+			m[index++] =  new RoutePayment(new ColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay2),trials, up,0);
+			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay1),trials, up,0);
+			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay1),trials, up,0);	
+			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitClosest(speedyMulti[0]), 0.1*i,maxdelay2),trials, up,0);
+			m[index++] =  new RoutePayment(new NonColludingDropSplits(new SplitIfNecessary(speedyMulti[0]), 0.1*i,maxdelay2),trials, up,0);
 		}	
 		m[index++] = new TransactionStats();
 		Series.generate(net, m, runs);
 	}
 	
 	/**
-	 * evaluation with dynamic adjustments of weights (general setup), Figure 8 in paper  
+	 * evaluation with dynamic adjustments of weights (general setup,0), Figure 8 in paper  
 	 */
 	public static void dynamicEval() {
 		//storage setup
@@ -135,14 +135,14 @@ public class Evaluation {
 		Metric[] m = new Metric[3+3*trees.length+1]; 
 		int index = 0; 
 		//HopDistance routing for three splitting protocols 
-		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up);
-		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up);	
-		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up); 
+		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up,0);
+		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up,0);	
+		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up,0); 
 		//Interdimensional SpeedyMurmurs with varying number of trees, routing for three splitting protocols 
 		for (int i = 0; i < trees.length; i++){
-			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up);
-			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up);	
-			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up);
+			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up,0);
+			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up,0);	
+			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up,0);
 		}	
 		//compute stats about transaction set 
 		m[index++] = new TransactionStats();
@@ -204,9 +204,9 @@ public class Evaluation {
 		Metric[] m = new Metric[3*speedyMulti.length+1];  
 		int index = 0;
 		for (int i = 0; i < speedyMulti.length; i++){
-			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up);
-			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up);	
-			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up);
+			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up,0);
+			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up,0);	
+			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up,0);
 		}
 		//stats about transactions 
 		m[index++] = new TransactionStats(); 
@@ -276,13 +276,13 @@ public class Evaluation {
 		boolean up = false; 
 		Metric[] m = new Metric[3+3*trees.length+2]; 
 		int index = 0;
-		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up);
-		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up);	
-		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up); 
+		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up,0);
+		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up,0);	
+		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up,0); 
 		for (int i = 0; i < trees.length; i++){
-			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up);
-			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up);	
-			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up);
+			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up,0);
+			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up,0);	
+			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up,0);
 		}
 		//computer network and transaction statistics 
 		m[index++] = new DegreeDistribution(); 
@@ -355,13 +355,13 @@ public class Evaluation {
 		boolean up = false; 
 		Metric[] m = new Metric[3+3*trees.length+1]; 
 		int index = 0;
-		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up);
-		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up);	
-		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up); 
+		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up,0);
+		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up,0);	
+		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up,0); 
 		for (int i = 0; i < trees.length; i++){
-			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up);
-			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up);	
-			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up);
+			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up,0);
+			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up,0);	
+			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up,0);
 		}	
 		//transaction stats 
 		m[index++] = new TransactionStats();
@@ -396,16 +396,16 @@ public class Evaluation {
 		boolean up = false; 
 		Metric[] m = new Metric[4+3*trees.length+3+1]; 
 		int index = 0;
-		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up);
-		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up);	
-		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up); 
-		m[index++] =  new RoutePayment(new RandomSplit(hop),trials, up); 
+		m[index++] =  new RoutePayment(new ClosestNeighbor(hop),trials, up,0);
+		m[index++] =  new RoutePayment(new SplitIfNecessary(hop), trials, up,0);	
+		m[index++] =  new RoutePayment(new SplitClosest(hop),trials, up,0); 
+		m[index++] =  new RoutePayment(new RandomSplit(hop),trials, up,0); 
 		for (int i = 0; i < trees.length; i++){
-			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up);
-			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up);	
-			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up);
+			m[index++] =  new RoutePayment(new ClosestNeighbor(speedyMulti[i]),trials, up,0);
+			m[index++] =  new RoutePayment(new SplitIfNecessary(speedyMulti[i]), trials, up,0);	
+			m[index++] =  new RoutePayment(new SplitClosest(speedyMulti[i]),trials, up,0);
 			if (i < 3) {
-				m[index++] =  new RoutePayment(new RandomSplit(speedyMulti[i]),trials, up); 
+				m[index++] =  new RoutePayment(new RandomSplit(speedyMulti[i]),trials, up,0); 
 			}
 		}
 		m[index++] = new TransactionStats();
@@ -438,10 +438,10 @@ public class Evaluation {
 		int trials = 1;
 		boolean up = false; 
 		Metric[] m = new Metric[1+trees.length+1]; 
-		m[0] = new RoutePayment(new RandomSplit(hop),trials, up);  
+		m[0] = new RoutePayment(new RandomSplit(hop),trials, up,0);  
 		int index = 1;
 		for (int i = 0; i < trees.length; i++){
-			m[index++] =  new RoutePayment(new RandomSplit(speedyMulti[i]),trials, up); 
+			m[index++] =  new RoutePayment(new RandomSplit(speedyMulti[i]),trials, up,0); 
 		}		 
 		m[index++] = new TransactionStats();
 		Series.generate(net, m, runs); 		

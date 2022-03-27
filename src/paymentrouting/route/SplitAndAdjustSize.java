@@ -5,6 +5,8 @@ import java.util.*;
 import gtna.graph.Graph;
 import gtna.graph.Node;
 
+import static java.lang.Math.max;
+
 /**
  * only split if necessary
  * if so: split as few times as possible by using neighbors with highest balances
@@ -56,13 +58,15 @@ public class SplitAndAdjustSize extends PathSelection {
             }
         }
         totalSum  +=sum;
-        double ratio = (sum-curVal)/(totalSum/2);
-        if(ratio>=0.5)
+        double ratio = (sum-curVal)/(totalSum);
+        if(ratio<-0.2) return null;
+        if(ratio>0.1)
             curVal = curVal;
-        else if(ratio>=0)
-            curVal*=(0.2+ratio);
-        else
-            curVal = sum * 0.2;
+        else if(ratio>0)
+            curVal = curVal*0.9;
+        else if(ratio>-0.1)
+            curVal = sum * 0.8;
+        else curVal = 0;
 
         //sort nodes by potential (available funds)
         double[] partVal = new double[out.length];
@@ -130,6 +134,12 @@ public class SplitAndAdjustSize extends PathSelection {
                 }
             }
             if (all >= curVal) {
+                double summ = 0.0;
+                for(int j=0;j<consumedNodes.size()-1;j++)
+                {
+                    summ+=partVal[consumedNodes.get(j)];
+                }
+                partVal[consumedNodes.get(consumedNodes.size()-1)] = curVal-summ;
                 //if all funds assigned, stop
                 break;
             }

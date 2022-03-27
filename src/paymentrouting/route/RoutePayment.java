@@ -27,8 +27,8 @@ import treeembedding.credit.Transaction;
  */
 public class RoutePayment extends Metric{
 	//Parameters:
-	protected int totalTime = 300;
-	protected double cRedundant = 2.4;
+	protected int totalTime = 3000;
+	protected double cRedundant = 0;
 	protected Random rand; //random seed
 	protected boolean update; //are balances updated after payment or returned to original  
 	protected Transaction[] transactions; //list of transactions 
@@ -63,8 +63,8 @@ public class RoutePayment extends Metric{
 	protected int messageCount[];
 	protected int maxHopCount[];
 
-	public RoutePayment(PathSelection ps, int trials, boolean up) {
-		this(ps,trials,up,Integer.MAX_VALUE); 
+	public RoutePayment(PathSelection ps, int trials, boolean up,double redundancy) {
+		this(ps,trials,up,Integer.MAX_VALUE,redundancy);
 	}
 	
     /**
@@ -74,14 +74,15 @@ public class RoutePayment extends Metric{
      * @param up
      * @param epoch
      */
-	public RoutePayment(PathSelection ps, int trials, boolean up, int epoch) {
+	public RoutePayment(PathSelection ps, int trials, boolean up, int epoch,double redundancy) {
 		super("ROUTE_PAYMENT", new Parameter[]{new StringParameter("SELECTION", ps.getName()), new IntParameter("TRIALS", trials),
 				new BooleanParameter("UPDATE", up), new StringParameter("DISTANCE", ps.getDist().name), 
 				new IntParameter("EPOCH", epoch)});
 		this.trials = trials;		
 		this.update = up;
 		this.select = ps; 
-		this.recompute_epoch = epoch; 
+		this.recompute_epoch = epoch;
+		this.cRedundant = redundancy;
 	}
 	
 	/**
@@ -127,6 +128,12 @@ public class RoutePayment extends Metric{
 	@Override
 	public void computeData(Graph g, Network n, HashMap<String, Metric> m) {
 		//init values
+		if(this.cRedundant>1)
+		{
+			System.out.println("revoke protocol: "+this.cRedundant);
+			computeData2(g,n,m);
+			return;
+		}
 		rand = new Random();
 		this.select.initRoutingInfo(g, rand);
 		edgeweights = (CreditLinks) g.getProperty("CREDIT_LINKS");
@@ -648,14 +655,6 @@ public class RoutePayment extends Metric{
 						double[] partVals = this.select.getNextsVals(g, cur, dsts[id],
 								pre, excluded, this, pp.val, rand, pp.reality);
 						double tempSum = 0.0;
-						for(int l=0;l<partVals.length;l++)
-							tempSum+=partVals[l];
-						if(tempSum<pp.val) {
-							Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
-							tempPAST.add(cur);
-							revoke(tempPAST, pp.val - tempSum);
-						}
-						sumVal+=tempSum;
 						//reset excluded for future use
 						for (int l = 0; l < past.size(); l++) {
 							excluded[past.get(l)] = false;
@@ -663,7 +662,14 @@ public class RoutePayment extends Metric{
 						//add neighbors that are not the dest to new set of current nodes
 						if (partVals != null) {
 							//past.add(cur);
-
+							for(int l=0;l<partVals.length;l++)
+								tempSum+=partVals[l];
+							if(tempSum<pp.val) {
+								Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
+								tempPAST.add(cur);
+								revoke(tempPAST, pp.val - tempSum);
+							}
+							sumVal+=tempSum;
 							int[] out = nodes[cur].getOutgoingEdges();
 							int zeros = 0; //delay -> stay at same node (happens as part of attacks, ignore if not in attack scenario)
 							for (int k = 0; k < partVals.length; k++) {
@@ -697,6 +703,7 @@ public class RoutePayment extends Metric{
 										if(partVals[k]>vals[id])
 										{
 											revoke(tempPAST,partVals[k]-vals[id]);
+											vals[id] = 0;
 										}
 										else vals[id]-=partVals[k];
 									}
@@ -741,7 +748,7 @@ public class RoutePayment extends Metric{
 					hopCount[id]++; //increase hops
 
 					//revoke too much, impossible to complete, so revoke all
-					if(sumVal<vals[id]) {
+					if(vals[id]-sumVal>0.00001) {
 						flags[id] = false;
 						for(int l=0;l< pps.size();l++)
 						{
@@ -764,6 +771,14 @@ public class RoutePayment extends Metric{
 						this.select.clear(); //clear any information related to finished payment
 						if (!flags[id]) {
 							hopCount[id]--;
+							for(int hh = 0;hh<next.size();hh++)
+							{
+								PartialPath tempp = next.get(hh);
+								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
+								tempPAST.add(tempp.node);
+								revoke(tempp.pre,tempp.val);
+							}
+							//recovery to original weights
 							//payments were not made -> return to previous weights
 							//this.weightUpdate(edgeweights, originalWeight); deprecated since concurrent payments exist
 						} else {
@@ -772,6 +787,7 @@ public class RoutePayment extends Metric{
 								//this.weightUpdate(edgeweights, originalWeight); deprecated since concurrent payments exist
 							}
 							//update stats for this transaction
+							//System.out.println(vals[id]+" "+sumVal);
 							pathSucc = inc(pathSucc, hopCount[id]);
 							mesSucc = inc(mesSucc, messageCount[id]);
 
@@ -788,12 +804,6 @@ public class RoutePayment extends Metric{
 						}
 						path = inc(path, hopCount[id]);
 						mes = inc(mes, messageCount[id]);
-					}
-					else
-					{
-
-						//this.storedPPS[id] = pps;
-						//this.timeQueue[i+1].add(id);
 					}
 					/*if ((i + 1) % this.tInterval == 0) {
 						this.succTime[slot] = this.succTime[slot] / this.tInterval;
