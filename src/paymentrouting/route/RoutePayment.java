@@ -628,7 +628,7 @@ public class RoutePayment extends Metric{
 				boolean[] excluded = new boolean[nodes.length];
 
 				//HashMap<Edge, Double> originalWeight = new HashMap<Edge, Double>(); //updated weights
-
+				int revoked = 0;
 				//while current set of nodes is not empty
 				if (!pps.isEmpty() && hopCount[id] < maxHopCount[id]) {
 					if (log) {
@@ -725,8 +725,10 @@ public class RoutePayment extends Metric{
 								System.out.println("fail");
 								//throw new IllegalArgumentException();
 							}
+							revoked = 1;
 							flags[id] = false;
 							//break;
+							//System.out.println("haha");
 							for (int hh = j+1; hh < pps.size(); hh++) {
 								PartialPath tempp = pps.get(hh);
 								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
@@ -748,8 +750,10 @@ public class RoutePayment extends Metric{
 					hopCount[id]++; //increase hops
 
 					//revoke too much, impossible to complete, so revoke all
-					if(vals[id]-sumVal>0.00001) {
+					if(revoked==0&&vals[id]-sumVal>0.00001) {
 						flags[id] = false;
+						revoked = 1;
+						//System.out.println("nmd");
 						for(int l=0;l< pps.size();l++)
 						{
 							for(int ll=0;ll<pps.size();ll++) {
@@ -757,13 +761,14 @@ public class RoutePayment extends Metric{
 							}
 						}
 					}
-					else
+					else if(flags[id])
 					{
 						this.storedPPS[id] = pps;
 						this.timeQueue[i+1].add(id);
 					}
 
 					if (hopCount[id] == maxHopCount[id] && !pps.isEmpty()) {
+						//System.out.println("ad");
 						flags[id] = false;
 					}
 					if(flags[id]==false||pps.isEmpty())
@@ -771,16 +776,6 @@ public class RoutePayment extends Metric{
 						this.select.clear(); //clear any information related to finished payment
 						if (!flags[id]) {
 							hopCount[id]--;
-							for(int hh = 0;hh<next.size();hh++)
-							{
-								PartialPath tempp = next.get(hh);
-								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
-								tempPAST.add(tempp.node);
-								revoke(tempp.pre,tempp.val);
-							}
-							//recovery to original weights
-							//payments were not made -> return to previous weights
-							//this.weightUpdate(edgeweights, originalWeight); deprecated since concurrent payments exist
 						} else {
 							if (!this.update) {
 								//return credit links to original state
