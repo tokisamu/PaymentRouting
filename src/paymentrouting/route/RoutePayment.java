@@ -28,6 +28,7 @@ import treeembedding.credit.Transaction;
 public class RoutePayment extends Metric{
 	//Parameters:
 	protected int totalTime = 300;
+	protected double cRedundant = 2.4;
 	protected Random rand; //random seed
 	protected boolean update; //are balances updated after payment or returned to original  
 	protected Transaction[] transactions; //list of transactions 
@@ -56,10 +57,11 @@ public class RoutePayment extends Metric{
 	protected Vector<PartialPath>[] storedPPS; //store unfinished payments
 	protected int dsts[];
 	protected int srcs[];
-	protected  boolean flags[];
-	protected  int hopCount[];
-	protected  int messageCount[];
-	protected  int maxHopCount[];
+	protected boolean flags[];
+	protected double vals[];
+	protected int hopCount[];
+	protected int messageCount[];
+	protected int maxHopCount[];
 
 	public RoutePayment(PathSelection ps, int trials, boolean up) {
 		this(ps,trials,up,Integer.MAX_VALUE); 
@@ -281,21 +283,18 @@ public class RoutePayment extends Metric{
 							}
 							flags[id] = false;
 							//break;
-							for (int hh = 0; hh < pps.size(); hh++) {
+							for (int hh = j+1; hh < pps.size(); hh++) {
 								PartialPath tempp = pps.get(hh);
-								String str = srcs[id]+" to "+dsts[id]+" path: ";
-								for(int hhh=0;hhh<tempp.pre.size();hhh++)
-									str+=" "+tempp.pre.get(hhh);
-								//System.out.println(str);
-
-								for(int hhh=tempp.pre.size()-2;hhh>=0;hhh--)
-								{
-									//store original balance before this execution (for other runs with different parameters)
-									//if (w > 0)
-										//System.out.println(tempp.pre.get(hhh+1)+" "+tempp.pre.get(hhh));
-									//else
-									edgeweights.setWeight(tempp.pre.get(hhh+1), tempp.pre.get(hhh), tempp.val);//set to new balance
-								}
+								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
+								tempPAST.add(tempp.node);
+								revoke(tempp.pre,tempp.val);
+							}
+							for(int hh = 0;hh<next.size();hh++)
+							{
+								PartialPath tempp = next.get(hh);
+								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
+								tempPAST.add(tempp.node);
+								revoke(tempp.pre,tempp.val);
 							}
 							//recovery to original weights
 							break;
@@ -571,6 +570,7 @@ public class RoutePayment extends Metric{
 		hopCount= new int[count*2];
 		messageCount= new int[count*2];
 		maxHopCount= new int[count*2];
+		vals = new double[count*2];
 
 		int len = this.transactions.length / this.tInterval;
 		int rest = this.transactions.length % this.tInterval;
@@ -590,6 +590,9 @@ public class RoutePayment extends Metric{
 			srcs[i] = src;
 			if (log) System.out.println("Src-dst " + src + "," + dst);
 			double val = tr.getVal();
+			vals[i] = val;
+			//add redundancy to payments and store the original value
+			val = val*cRedundant;
 			boolean s = true; //successful, reset when failure encountered
 			flags[i] = s;
 			hopCount[i] = 0;
@@ -607,9 +610,9 @@ public class RoutePayment extends Metric{
 				this.timeQueue[totalTime/this.transactions.length*i].add(i);
 			else this.timeQueue[i % totalTime].add(i);
 		}
-
+		//execute payments by time order
 		for (int i = 0; i < totalTime; i++) {
-			//System.out.println(this.timeQueue[i].size());
+			//iterate over payments to be handled in one second
 			for (int ii = 0; ii < this.timeQueue[i].size(); ii++) {
 				int id = timeQueue[i].get(ii);
 				Vector<PartialPath> pps = this.storedPPS[id];
@@ -626,6 +629,7 @@ public class RoutePayment extends Metric{
 					}
 					Vector<PartialPath> next = new Vector<PartialPath>();
 					//iterate over set of current set of nodes
+					double sumVal = 0.0;
 					for (int j = 0; j < pps.size(); j++) {
 						PartialPath pp = pps.get(j);
 						int cur = pp.node;
@@ -643,11 +647,19 @@ public class RoutePayment extends Metric{
 						//getNextVals -> distribution of payment value over neighbors
 						double[] partVals = this.select.getNextsVals(g, cur, dsts[id],
 								pre, excluded, this, pp.val, rand, pp.reality);
+						double tempSum = 0.0;
+						for(int l=0;l<partVals.length;l++)
+							tempSum+=partVals[l];
+						if(tempSum<pp.val) {
+							Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
+							tempPAST.add(cur);
+							revoke(tempPAST, pp.val - tempSum);
+						}
+						sumVal+=tempSum;
 						//reset excluded for future use
 						for (int l = 0; l < past.size(); l++) {
 							excluded[past.get(l)] = false;
 						}
-
 						//add neighbors that are not the dest to new set of current nodes
 						if (partVals != null) {
 							//past.add(cur);
@@ -677,6 +689,17 @@ public class RoutePayment extends Metric{
 										next.add(new PartialPath(out[k], partVals[k],
 												tempPAST, pp.reality)); //add new intermediary to path
 									}
+									else
+									{
+										Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
+										tempPAST.add(cur);
+										tempPAST.add(dsts[id]);
+										if(partVals[k]>vals[id])
+										{
+											revoke(tempPAST,partVals[k]-vals[id]);
+										}
+										else vals[id]-=partVals[k];
+									}
 									if (log) {
 										System.out.println("add link (" + cur + "," + out[k] + ") with val " + partVals[k]);
 									}
@@ -697,21 +720,18 @@ public class RoutePayment extends Metric{
 							}
 							flags[id] = false;
 							//break;
-							for (int hh = 0; hh < pps.size(); hh++) {
+							for (int hh = j+1; hh < pps.size(); hh++) {
 								PartialPath tempp = pps.get(hh);
-								String str = srcs[id]+" to "+dsts[id]+" path: ";
-								for(int hhh=0;hhh<tempp.pre.size();hhh++)
-									str+=" "+tempp.pre.get(hhh);
-								//System.out.println(str);
-
-								for(int hhh=tempp.pre.size()-2;hhh>=0;hhh--)
-								{
-									//store original balance before this execution (for other runs with different parameters)
-									//if (w > 0)
-									//System.out.println(tempp.pre.get(hhh+1)+" "+tempp.pre.get(hhh));
-									//else
-									edgeweights.setWeight(tempp.pre.get(hhh+1), tempp.pre.get(hhh), tempp.val);//set to new balance
-								}
+								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
+								tempPAST.add(tempp.node);
+								revoke(tempp.pre,tempp.val);
+							}
+							for(int hh = 0;hh<next.size();hh++)
+							{
+								PartialPath tempp = next.get(hh);
+								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
+								tempPAST.add(tempp.node);
+								revoke(tempp.pre,tempp.val);
 							}
 							//recovery to original weights
 							break;
@@ -719,10 +739,23 @@ public class RoutePayment extends Metric{
 					}
 					pps = this.merge(next); //merge paths: if the same payment arrived at a node via two paths: merge into one
 					hopCount[id]++; //increase hops
-					this.storedPPS[id] = pps;
-					this.timeQueue[i+1].add(id);
 
-					//reached maxhop count -> fail
+					//revoke too much, impossible to complete, so revoke all
+					if(sumVal<vals[id]) {
+						flags[id] = false;
+						for(int l=0;l< pps.size();l++)
+						{
+							for(int ll=0;ll<pps.size();ll++) {
+								revoke(pps.get(ll).pre, pps.get(ll).val);
+							}
+						}
+					}
+					else
+					{
+						this.storedPPS[id] = pps;
+						this.timeQueue[i+1].add(id);
+					}
+
 					if (hopCount[id] == maxHopCount[id] && !pps.isEmpty()) {
 						flags[id] = false;
 					}
@@ -797,7 +830,17 @@ public class RoutePayment extends Metric{
 		this.weightUpdate(edgeweights, originalAll);
 	}
 
+	public void revoke(Vector<Integer> pre,double val) {
+		String str = "";
+		for (int hhh = 0; hhh < pre.size(); hhh++)
+			str += " " + pre.get(hhh);
+		//System.out.println(str);
+		for (int hhh = pre.size() - 2; hhh >= 0; hhh--) {
+			edgeweights.setWeight(pre.get(hhh + 1), pre.get(hhh), val);//set to new balance
+		}
+	}
 }
+
 
 
 

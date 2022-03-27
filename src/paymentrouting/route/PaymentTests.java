@@ -50,7 +50,7 @@ public class PaymentTests {
         //generate transformations to add i) capacities and ii) transactions 
 		Transformation[] trans = new Transformation[] { new InitCapacities(200, -1, BalDist.EXP),
 				//exponentially distributed capacities with average value 200 (middle value is variance, which is not relevant for exponential)
-				new Transactions(20, -1, TransDist.EXP, false, 150, true, false)
+				new Transactions(20, -1, TransDist.EXP, false, 1500, true, false)
 				// 15 transactions with expontially distributed values with average 20 (again -1 is variance, not needed for exp), 
 				//no cutoff, no concrete timestamp, no restriction to transactions guaranteed to be successful 
 		        };
