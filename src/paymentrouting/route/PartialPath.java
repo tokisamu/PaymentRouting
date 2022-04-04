@@ -15,12 +15,14 @@ public class PartialPath {
 		public double val;
 		public Vector<Integer> pre;
 		public int reality;
+		public double fee;
 		
-		public PartialPath(int n, double val2, Vector<Integer> p, int r) {
+		public PartialPath(int n, double val2, Vector<Integer> p, int r,double fee) {
 			this.node = n;
 			this.val = val2;
 			this.pre = p;
 			this.reality = r;
+			this.fee = fee;
 		}
 	
 }

@@ -6,6 +6,7 @@ import gtna.graph.Graph;
 import gtna.graph.Node;
 
 import static java.lang.Math.max;
+import static java.lang.Math.min;
 
 /**
  * only split if necessary
@@ -58,15 +59,13 @@ public class SplitAndAdjustSize extends PathSelection {
             }
         }
         totalSum  +=sum;
-        double ratio = (sum-curVal)/(totalSum);
-        if(ratio<-0.2) return null;
-        if(ratio>0.1)
-            curVal = curVal;
-        else if(ratio>0)
-            curVal = curVal*0.9;
-        else if(ratio>-0.1)
-            curVal = sum * 0.8;
-        else curVal = 0;
+        double ratio = (sum-curVal)/(totalSum+sum);
+
+        //if(ratio<-0.1) return null;
+        if(ratio>=0)
+            curVal = curVal;//*min(1,0.7+ratio*2);
+        //else if(ratio>-0.1) curVal = 0;
+        else curVal = sum;
 
         //sort nodes by potential (available funds)
         double[] partVal = new double[out.length];
@@ -83,6 +82,26 @@ public class SplitAndAdjustSize extends PathSelection {
         double all = 0; //already assigned funds
         ArrayList<Integer> consumedNodes = new ArrayList<>();
         //iteratively assign funds to be forwarded to neighors
+        /*for (int i = vals.length-1; i > -1; i--) {
+            //start with nodes with highest funds to reduce splitting
+            Vector<Integer> vec = pots.get(vals[i]);
+            while (vec.size() > 0) {
+                int node = vec.remove(rand.nextInt(vec.size()));
+                //assign as many funds as possible to this node: all remaining funds if possible, otherwise maximum they can forward
+                double valNode = Math.min(rp.computePotential(cur, out[node]), curVal-all);
+                all = all + valNode;
+                partVal[node] = valNode;
+                if (all >= curVal) {
+                    //if all funds assigned, stop
+                    break;
+                }
+            }
+            if (all >= curVal) {
+                //if all funds assigned, stop
+                break;
+            }
+        }
+        return partVal;*/
         for (int i = vals.length-1; i > -1; i--) {
             //start with nodes with highest funds to reduce splitting
             Vector<Integer> vec = pots.get(vals[i]);

@@ -29,6 +29,8 @@ public class RoutePayment extends Metric{
 	//Parameters:
 	protected int totalTime = 3000;
 	protected double cRedundant = 0;
+	protected double feeRate = 0.4;
+	protected double totalFeeRate = 0.01;
 	protected Random rand; //random seed
 	protected boolean update; //are balances updated after payment or returned to original  
 	protected Transaction[] transactions; //list of transactions 
@@ -59,6 +61,7 @@ public class RoutePayment extends Metric{
 	protected int srcs[];
 	protected boolean flags[];
 	protected double vals[];
+	protected double oldVals[];
 	protected int hopCount[];
 	protected int messageCount[];
 	protected int maxHopCount[];
@@ -135,6 +138,7 @@ public class RoutePayment extends Metric{
 			return;
 		}
 		rand = new Random();
+		SybilProofFee feePolicy = new SybilProofFee(1-feeRate);
 		this.select.initRoutingInfo(g, rand);
 		edgeweights = (CreditLinks) g.getProperty("CREDIT_LINKS");
 		HashMap<Edge, Double> originalAll = new HashMap<Edge, Double>();
@@ -164,7 +168,8 @@ public class RoutePayment extends Metric{
 		hopCount= new int[count*2];
 		messageCount= new int[count*2];
 		maxHopCount= new int[count*2];
-
+		oldVals = new double[count*2];
+		double successSum = 0;
 		int len = this.transactions.length / this.tInterval;
 		int rest = this.transactions.length % this.tInterval;
 		if (rest == 0) {
@@ -183,17 +188,37 @@ public class RoutePayment extends Metric{
 			srcs[i] = src;
 			if (log) System.out.println("Src-dst " + src + "," + dst);
 			double val = tr.getVal();
+			oldVals[i] = val;
 			boolean s = true; //successful, reset when failure encountered
 			flags[i] = s;
 			hopCount[i] = 0;
 			messageCount[i] = 0;
 			int maxhops = this.select.getDist().getTimeLock(src, dst); //maximal length of path
 			maxHopCount[i] = maxhops;
+			Node[] nodess = g.getNodes();
+			int[] out = nodess[src].getOutgoingEdges();
+			double tempSum = 0;
+			for (int k = 0; k < out.length; k++) {
+				if (this.select.dist.isCloser(out[k], src, dst, 1)) {
+					double pot = this.computePotential(src, out[k]);
+					tempSum+=pot;
+				}
+			}
+			if(tempSum<val*(1+totalFeeRate)) continue;
+			out = nodess[dst].getOutgoingEdges();
+			tempSum = 0;
+			for (int k = 0; k < out.length; k++) {
+				{
+					double pot = this.computePotential(out[k],dst);
+					tempSum+=pot;
+				}
+			}
+			if(tempSum<val*(1+totalFeeRate)) continue;
 			Vector<PartialPath> pps = new Vector<PartialPath>();
 			//some routing algorithm split over multiple dimensions in the beginning (!= splitting during routing)
 			double[] splitVal = this.splitRealities(val, select.getDist().startR, rand);
 			for (int a = 0; a < select.getDist().startR; a++) {
-				pps.add(new PartialPath(src, splitVal[a], new Vector<Integer>(), a));
+				pps.add(new PartialPath(src, splitVal[a], new Vector<Integer>(), a,splitVal[a]*totalFeeRate));
 			}
 			this.storedPPS[i] = pps;
 			if(this.transactions.length<totalTime)
@@ -234,8 +259,9 @@ public class RoutePayment extends Metric{
 
 						if (log) System.out.println("Routing at cur " + cur);
 						//getNextVals -> distribution of payment value over neighbors
+						double feeRatio = feePolicy.charge(pp.fee)/(pp.val+feePolicy.charge(pp.fee));
 						double[] partVals = this.select.getNextsVals(g, cur, dsts[id],
-								pre, excluded, this, pp.val, rand, pp.reality);
+								pre, excluded, this, pp.val+feePolicy.charge(pp.fee), rand, pp.reality);
 						//reset excluded for future use
 						for (int l = 0; l < past.size(); l++) {
 							excluded[past.get(l)] = false;
@@ -258,7 +284,7 @@ public class RoutePayment extends Metric{
 										originalWeight.put(e, w); //store balance before this payment if later reset due to, e.g., failure
 									}
 									*/
-									if (this.update && !originalAll.containsKey(e)) {
+									if (!originalAll.containsKey(e)) {
 										originalAll.put(e, w); //store original balance before this execution (for other runs with different parameters)
 									}
 									edgeweights.setWeight(cur, out[k], partVals[k]);//set to new balance
@@ -267,8 +293,8 @@ public class RoutePayment extends Metric{
 										Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
 										tempPAST.add(cur);
 										//System.out.println(srcs[id]+" to "+dsts[id]+" pre: "+tempPAST.toString());
-										next.add(new PartialPath(out[k], partVals[k],
-												tempPAST, pp.reality)); //add new intermediary to path
+										next.add(new PartialPath(out[k], partVals[k]*(1-feeRatio),
+												tempPAST, pp.reality,partVals[k]*feeRatio)); //add new intermediary to path
 									}
 									if (log) {
 										System.out.println("add link (" + cur + "," + out[k] + ") with val " + partVals[k]);
@@ -280,7 +306,7 @@ public class RoutePayment extends Metric{
 							if (zeros == partVals.length) {
 								//stay at node itself
 								next.add(new PartialPath(cur, pp.val,
-										(Vector<Integer>) past.clone(), pp.reality));
+										(Vector<Integer>) past.clone(), pp.reality,pp.fee));
 							}
 						} else {
 							//failure to find nodes to route to
@@ -294,14 +320,14 @@ public class RoutePayment extends Metric{
 								PartialPath tempp = pps.get(hh);
 								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
 								tempPAST.add(tempp.node);
-								revoke(tempp.pre,tempp.val);
+								revoke(tempp.pre,tempp.val,tempp.fee);
 							}
 							for(int hh = 0;hh<next.size();hh++)
 							{
 								PartialPath tempp = next.get(hh);
 								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
 								tempPAST.add(tempp.node);
-								revoke(tempp.pre,tempp.val);
+								revoke(tempp.pre,tempp.val,tempp.fee);
 							}
 							//recovery to original weights
 							break;
@@ -328,6 +354,7 @@ public class RoutePayment extends Metric{
 								//return credit links to original state
 								//this.weightUpdate(edgeweights, originalWeight); deprecated since concurrent payments exist
 							}
+							successSum+=oldVals[id];
 							//update stats for this transaction
 							pathSucc = inc(pathSucc, hopCount[id]);
 							mesSucc = inc(mesSucc, messageCount[id]);
@@ -485,7 +512,7 @@ public class RoutePayment extends Metric{
 			PartialPath p = unmerged.get(i); //path to merge (only with other path in same dimension) 
 			int node = p.node;
 			int r = p.reality;
-			vec.add(new PartialPath(node, p.val, p.pre,r));
+			vec.add(new PartialPath(node, p.val, p.pre,r,p.fee));
 			HashSet<Integer> dealt = dealtWith.get(r);
 			if (dealt == null) {
 				//add new set for this dimension 
@@ -570,7 +597,8 @@ public class RoutePayment extends Metric{
 		long[] pathSucc = new long[2];
 		long[] mes = new long[2];
 		long[] mesSucc = new long[2];
-
+		oldVals = new double[count*2];
+		double successSum = 0;
 		dsts = new int[count*2];
 		srcs = new int[count*2];
 		flags = new boolean[count*2];
@@ -578,7 +606,7 @@ public class RoutePayment extends Metric{
 		messageCount= new int[count*2];
 		maxHopCount= new int[count*2];
 		vals = new double[count*2];
-
+		SybilProofFee feePolicy = new SybilProofFee(1-feeRate);
 		int len = this.transactions.length / this.tInterval;
 		int rest = this.transactions.length % this.tInterval;
 		if (rest == 0) {
@@ -598,6 +626,7 @@ public class RoutePayment extends Metric{
 			if (log) System.out.println("Src-dst " + src + "," + dst);
 			double val = tr.getVal();
 			vals[i] = val;
+			oldVals[i] = val;
 			//add redundancy to payments and store the original value
 			val = val*cRedundant;
 			boolean s = true; //successful, reset when failure encountered
@@ -606,11 +635,30 @@ public class RoutePayment extends Metric{
 			messageCount[i] = 0;
 			int maxhops = this.select.getDist().getTimeLock(src, dst); //maximal length of path
 			maxHopCount[i] = maxhops;
+			Node[] nodess = g.getNodes();
+			int[] out = nodess[src].getOutgoingEdges();
+			double tempSum = 0;
+			for (int k = 0; k < out.length; k++) {
+				if (this.select.dist.isCloser(out[k], src, dst, 1)) {
+					double pot = this.computePotential(src, out[k]);
+					tempSum+=pot;
+				}
+			}
+			if(tempSum<vals[i]*(1+totalFeeRate)) continue;
+			out = nodess[dst].getOutgoingEdges();
+			tempSum = 0;
+			for (int k = 0; k < out.length; k++) {
+				{
+					double pot = this.computePotential(out[k],dst);
+					tempSum+=pot;
+				}
+			}
+			if(tempSum<vals[i]*(1+totalFeeRate)) continue;
 			Vector<PartialPath> pps = new Vector<PartialPath>();
 			//some routing algorithm split over multiple dimensions in the beginning (!= splitting during routing)
 			double[] splitVal = this.splitRealities(val, select.getDist().startR, rand);
 			for (int a = 0; a < select.getDist().startR; a++) {
-				pps.add(new PartialPath(src, splitVal[a], new Vector<Integer>(), a));
+				pps.add(new PartialPath(src, splitVal[a], new Vector<Integer>(), a,splitVal[a]*totalFeeRate));
 			}
 			this.storedPPS[i] = pps;
 			if(this.transactions.length<totalTime)
@@ -639,6 +687,7 @@ public class RoutePayment extends Metric{
 					double sumVal = 0.0;
 					for (int j = 0; j < pps.size(); j++) {
 						PartialPath pp = pps.get(j);
+						//System.out.println(pp.val+" "+pp.fee);
 						int cur = pp.node;
 						//exclude nodes already on the path
 						int pre = -1;
@@ -652,8 +701,9 @@ public class RoutePayment extends Metric{
 
 						if (log) System.out.println("Routing at cur " + cur);
 						//getNextVals -> distribution of payment value over neighbors
+						double feeRatio = feePolicy.charge(pp.fee)/(pp.val+feePolicy.charge(pp.fee));
 						double[] partVals = this.select.getNextsVals(g, cur, dsts[id],
-								pre, excluded, this, pp.val, rand, pp.reality);
+								pre, excluded, this, pp.val+feePolicy.charge(pp.fee), rand, pp.reality);
 						double tempSum = 0.0;
 						//reset excluded for future use
 						for (int l = 0; l < past.size(); l++) {
@@ -667,7 +717,7 @@ public class RoutePayment extends Metric{
 							if(tempSum<pp.val) {
 								Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
 								tempPAST.add(cur);
-								revoke(tempPAST, pp.val - tempSum);
+								revoke(tempPAST, pp.val - tempSum,pp.fee*(pp.val-tempSum)/pp.val);
 							}
 							sumVal+=tempSum;
 							int[] out = nodes[cur].getOutgoingEdges();
@@ -683,7 +733,7 @@ public class RoutePayment extends Metric{
 										originalWeight.put(e, w); //store balance before this payment if later reset due to, e.g., failure
 									}
 									*/
-									if (this.update && !originalAll.containsKey(e)) {
+									if (!originalAll.containsKey(e)) {
 										originalAll.put(e, w); //store original balance before this execution (for other runs with different parameters)
 									}
 									edgeweights.setWeight(cur, out[k], partVals[k]);//set to new balance
@@ -692,8 +742,8 @@ public class RoutePayment extends Metric{
 										Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
 										tempPAST.add(cur);
 										//System.out.println(srcs[id]+" to "+dsts[id]+" pre: "+tempPAST.toString());
-										next.add(new PartialPath(out[k], partVals[k],
-												tempPAST, pp.reality)); //add new intermediary to path
+										next.add(new PartialPath(out[k], partVals[k]*(1-feeRatio),
+												tempPAST, pp.reality,partVals[k]*feeRatio)); //add new intermediary to path
 									}
 									else
 									{
@@ -702,7 +752,7 @@ public class RoutePayment extends Metric{
 										tempPAST.add(dsts[id]);
 										if(partVals[k]>vals[id])
 										{
-											revoke(tempPAST,partVals[k]-vals[id]);
+											revoke(tempPAST,partVals[k]-vals[id],(partVals[k]-vals[id])*feeRatio);
 											vals[id] = 0;
 										}
 										else vals[id]-=partVals[k];
@@ -717,7 +767,7 @@ public class RoutePayment extends Metric{
 							if (zeros == partVals.length) {
 								//stay at node itself
 								next.add(new PartialPath(cur, pp.val,
-										(Vector<Integer>) past.clone(), pp.reality));
+										(Vector<Integer>) past.clone(), pp.reality,pp.fee));
 							}
 						} else {
 							//failure to find nodes to route to
@@ -733,14 +783,14 @@ public class RoutePayment extends Metric{
 								PartialPath tempp = pps.get(hh);
 								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
 								tempPAST.add(tempp.node);
-								revoke(tempp.pre,tempp.val);
+								revoke(tempp.pre,tempp.val,tempp.fee);
 							}
 							for(int hh = 0;hh<next.size();hh++)
 							{
 								PartialPath tempp = next.get(hh);
 								Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
 								tempPAST.add(tempp.node);
-								revoke(tempp.pre,tempp.val);
+								revoke(tempp.pre,tempp.val,tempp.fee);
 							}
 							//recovery to original weights
 							break;
@@ -757,7 +807,7 @@ public class RoutePayment extends Metric{
 						for(int l=0;l< pps.size();l++)
 						{
 							for(int ll=0;ll<pps.size();ll++) {
-								revoke(pps.get(ll).pre, pps.get(ll).val);
+								revoke(pps.get(ll).pre, pps.get(ll).val,pps.get(ll).fee);
 							}
 						}
 					}
@@ -785,7 +835,7 @@ public class RoutePayment extends Metric{
 							//System.out.println(vals[id]+" "+sumVal);
 							pathSucc = inc(pathSucc, hopCount[id]);
 							mesSucc = inc(mesSucc, messageCount[id]);
-
+							successSum += oldVals[id];
 							this.succTime[slot]++;
 							this.success++;
 							//if (t == 0)
@@ -835,13 +885,23 @@ public class RoutePayment extends Metric{
 		this.weightUpdate(edgeweights, originalAll);
 	}
 
-	public void revoke(Vector<Integer> pre,double val) {
+/*	public void revoke(Vector<Integer> pre,double val) {
 		String str = "";
 		for (int hhh = 0; hhh < pre.size(); hhh++)
 			str += " " + pre.get(hhh);
 		//System.out.println(str);
 		for (int hhh = pre.size() - 2; hhh >= 0; hhh--) {
 			edgeweights.setWeight(pre.get(hhh + 1), pre.get(hhh), val);//set to new balance
+		}
+	}*/
+	public void revoke(Vector<Integer> pre,double val,double fee) {
+		String str = "";
+		for (int hhh = 0; hhh < pre.size(); hhh++)
+			str += " " + pre.get(hhh);
+		//System.out.println(str);
+		for (int hhh = pre.size() - 2; hhh >= 0; hhh--) {
+			edgeweights.setWeight(pre.get(hhh + 1), pre.get(hhh), val+fee);//set to new balance
+			fee = fee/(1-feeRate);
 		}
 	}
 }

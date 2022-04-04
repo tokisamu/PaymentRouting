@@ -118,7 +118,7 @@ public class RoutePaymentFees extends RoutePayment {
 		    	for (int a = 0; a < splitVal.length; a++) {
 		    		if (splitVal[a] > 0) {
 		    			if (log) System.out.println("selected reality " + a); 
-		    	        pps.add(new PartialPath(src, splitVal[a],new Vector<Integer>(),a));
+		    	        pps.add(new PartialPath(src, splitVal[a],new Vector<Integer>(),a,1));
 		    		} else {
 		    			fees[a] = Double.MAX_VALUE;
 		    		}
@@ -192,7 +192,7 @@ public class RoutePaymentFees extends RoutePayment {
 		                			if (out[k] != dst) {
 		                				//add partf as previous link needs to sustain it 
 		                				next.add(new PartialPath(out[k], partVals[k]+partf, 
-		                						(Vector<Integer>)past.clone(),pp.reality));
+		                						(Vector<Integer>)past.clone(),pp.reality,1));
 		                			}
 		                			linksPerDim.get(pp.reality).add(new int[] {cur,out[k]}); 
 		                			double[] mins = this.minusPots.get(e);
