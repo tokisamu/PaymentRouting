@@ -60,7 +60,6 @@ public class SplitAndAdjustSize extends PathSelection {
         }
         totalSum  +=sum;
         double ratio = (sum-curVal)/(totalSum+sum);
-
         //if(ratio<-0.1) return null;
         if(ratio>=0)
             curVal = curVal;//*min(1,0.7+ratio*2);

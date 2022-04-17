@@ -1,6 +1,9 @@
 
 package paymentrouting.route;
 
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.util.*;
 import java.util.Map.Entry;
 
@@ -27,9 +30,10 @@ import treeembedding.credit.Transaction;
  */
 public class RoutePayment extends Metric{
 	//Parameters:
-	protected int totalTime = 3000;
+	protected int totalTime = 1000;
 	protected double cRedundant = 0;
 	protected double feeRate = 0.4;
+	protected double sizeRate = 0.8;
 	protected double totalFeeRate = 0.01;
 	protected Random rand; //random seed
 	protected boolean update; //are balances updated after payment or returned to original  
@@ -131,6 +135,7 @@ public class RoutePayment extends Metric{
 	@Override
 	public void computeData(Graph g, Network n, HashMap<String, Metric> m) {
 		//init values
+		//initialize weights
 		if(this.cRedundant>1)
 		{
 			System.out.println("revoke protocol: "+this.cRedundant);
@@ -141,16 +146,37 @@ public class RoutePayment extends Metric{
 		SybilProofFee feePolicy = new SybilProofFee(1-feeRate);
 		this.select.initRoutingInfo(g, rand);
 		edgeweights = (CreditLinks) g.getProperty("CREDIT_LINKS");
+		BufferedReader in = null;
+		Node[] nodes = g.getNodes();
+		if(nodes.length==6329) {
+			try {
+				in = new BufferedReader(new FileReader("lightning/ln_capacity.txt"));
+				String str;
+				while ((str = in.readLine()) != null) {
+					//System.out.println(str);
+					String[] ss = str.split("\\s+");
+					//System.out.println(ss);
+					int s1 = Integer.parseInt(ss[0]);
+					int s2 = Integer.parseInt(ss[1]);
+					double s3 = Double.parseDouble(ss[2]);
+					//System.out.println("ha: "+s1+' '+s2+' '+s3);
+					Edge e = edgeweights.makeEdge(s1, s2);
+					edgeweights.setWeight(e, new double[]{0, s3 / 2, s3});
+					//System.out.println(" "+s1+' '+s1+' '+s3/2);
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 		HashMap<Edge, Double> originalAll = new HashMap<Edge, Double>();
 		this.transactions = ((TransactionList) g.getProperty("TRANSACTION_LIST")).getTransactions();
 		int count = this.transactions.length;
-		Node[] nodes = g.getNodes();
-
 		this.avHops = 0;
 		this.avHopsSucc = 0;
 		this.avMess = 0;
 		this.avMessSucc = 0;
 		this.successFirst = 0;
+		int uselessCnt = 0;
 		this.success = 0;
 		this.timeQueue = new ArrayList[totalTime*2];
 		for (int i = 0; i < totalTime*2; i++)
@@ -186,15 +212,6 @@ public class RoutePayment extends Metric{
 			int dst = tr.getDst();
 			dsts[i] = dst;
 			srcs[i] = src;
-			if (log) System.out.println("Src-dst " + src + "," + dst);
-			double val = tr.getVal();
-			oldVals[i] = val;
-			boolean s = true; //successful, reset when failure encountered
-			flags[i] = s;
-			hopCount[i] = 0;
-			messageCount[i] = 0;
-			int maxhops = this.select.getDist().getTimeLock(src, dst); //maximal length of path
-			maxHopCount[i] = maxhops;
 			Node[] nodess = g.getNodes();
 			int[] out = nodess[src].getOutgoingEdges();
 			double tempSum = 0;
@@ -204,7 +221,21 @@ public class RoutePayment extends Metric{
 					tempSum+=pot;
 				}
 			}
-			if(tempSum<val*(1+totalFeeRate)) continue;
+			double val = tr.getVal();
+			if(nodes.length==6329)
+				val = tempSum*sizeRate;
+			oldVals[i] = val;
+			boolean s = true; //successful, reset when failure encountered
+			flags[i] = s;
+			hopCount[i] = 0;
+			messageCount[i] = 0;
+			int maxhops = this.select.getDist().getTimeLock(src, dst); //maximal length of path
+			maxHopCount[i] = maxhops;
+			if(tempSum<val*(1+totalFeeRate))
+			{
+				uselessCnt++;
+				continue;
+			}
 			out = nodess[dst].getOutgoingEdges();
 			tempSum = 0;
 			for (int k = 0; k < out.length; k++) {
@@ -213,7 +244,11 @@ public class RoutePayment extends Metric{
 					tempSum+=pot;
 				}
 			}
-			if(tempSum<val*(1+totalFeeRate)) continue;
+			if(tempSum<val*(1+totalFeeRate))
+			{
+				uselessCnt++;
+				continue;
+			}
 			Vector<PartialPath> pps = new Vector<PartialPath>();
 			//some routing algorithm split over multiple dimensions in the beginning (!= splitting during routing)
 			double[] splitVal = this.splitRealities(val, select.getDist().startR, rand);
@@ -335,8 +370,11 @@ public class RoutePayment extends Metric{
 					}
 					pps = this.merge(next); //merge paths: if the same payment arrived at a node via two paths: merge into one
 					hopCount[id]++; //increase hops
-					this.storedPPS[id] = pps;
-					this.timeQueue[i+1].add(id);
+					if(this.flags[id]!=false)
+					{
+						this.storedPPS[id] = pps;
+						this.timeQueue[i + 1].add(id);
+					}
 
 					//reached maxhop count -> fail
 					if (hopCount[id] == maxHopCount[id] && !pps.isEmpty()) {
@@ -345,7 +383,7 @@ public class RoutePayment extends Metric{
 					if(flags[id]==false||pps.isEmpty())
 					{
 						this.select.clear(); //clear any information related to finished payment
-						if (!flags[id]) {
+						if (flags[id]==false) {
 							hopCount[id]--;
 							//payments were not made -> return to previous weights
 							//this.weightUpdate(edgeweights, originalWeight); deprecated since concurrent payments exist
@@ -403,7 +441,7 @@ public class RoutePayment extends Metric{
 		this.avHopsSucc = this.hopDistributionSucc.getAverage();
 		this.avMess = this.messageDistribution.getAverage();
 		this.avMessSucc = this.messageDistributionSucc.getAverage();
-		this.success = this.success/this.transactions.length;
+		this.success = this.success/(this.transactions.length-uselessCnt);
 		System.out.println(success);
 		this.successFirst = this.successFirst/this.transactions.length;
 		if (rest > 0) {
@@ -577,10 +615,31 @@ public class RoutePayment extends Metric{
 		rand = new Random();
 		this.select.initRoutingInfo(g, rand);
 		edgeweights = (CreditLinks) g.getProperty("CREDIT_LINKS");
+		BufferedReader in = null;
+		Node[] nodes = g.getNodes();
+		if(nodes.length==6329) {
+			try {
+				in = new BufferedReader(new FileReader("lightning/ln_capacity.txt"));
+				String str;
+				while ((str = in.readLine()) != null) {
+					//System.out.println(str);
+					String[] ss = str.split("\\s+");
+					//System.out.println(ss);
+					int s1 = Integer.parseInt(ss[0]);
+					int s2 = Integer.parseInt(ss[1]);
+					double s3 = Double.parseDouble(ss[2]);
+					//System.out.println("ha: "+s1+' '+s2+' '+s3);
+					Edge e = edgeweights.makeEdge(s1, s2);
+					edgeweights.setWeight(e, new double[]{0, s3 / 2, s3});
+					//System.out.println(" "+s1+' '+s1+' '+s3/2);
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 		HashMap<Edge, Double> originalAll = new HashMap<Edge, Double>();
 		this.transactions = ((TransactionList) g.getProperty("TRANSACTION_LIST")).getTransactions();
 		int count = this.transactions.length;
-		Node[] nodes = g.getNodes();
 
 		this.avHops = 0;
 		this.avHopsSucc = 0;
@@ -606,6 +665,7 @@ public class RoutePayment extends Metric{
 		messageCount= new int[count*2];
 		maxHopCount= new int[count*2];
 		vals = new double[count*2];
+		int uselessCnt = 0;
 		SybilProofFee feePolicy = new SybilProofFee(1-feeRate);
 		int len = this.transactions.length / this.tInterval;
 		int rest = this.transactions.length % this.tInterval;
@@ -623,18 +683,6 @@ public class RoutePayment extends Metric{
 			int dst = tr.getDst();
 			dsts[i] = dst;
 			srcs[i] = src;
-			if (log) System.out.println("Src-dst " + src + "," + dst);
-			double val = tr.getVal();
-			vals[i] = val;
-			oldVals[i] = val;
-			//add redundancy to payments and store the original value
-			val = val*cRedundant;
-			boolean s = true; //successful, reset when failure encountered
-			flags[i] = s;
-			hopCount[i] = 0;
-			messageCount[i] = 0;
-			int maxhops = this.select.getDist().getTimeLock(src, dst); //maximal length of path
-			maxHopCount[i] = maxhops;
 			Node[] nodess = g.getNodes();
 			int[] out = nodess[src].getOutgoingEdges();
 			double tempSum = 0;
@@ -644,7 +692,24 @@ public class RoutePayment extends Metric{
 					tempSum+=pot;
 				}
 			}
-			if(tempSum<vals[i]*(1+totalFeeRate)) continue;
+			double val = tr.getVal();
+			if(nodes.length==6329)
+				val = tempSum*sizeRate;
+			vals[i] = val;
+			//add redundancy to payments and store the original value
+			val = val*cRedundant;
+			oldVals[i] = val;
+			boolean s = true; //successful, reset when failure encountered
+			flags[i] = s;
+			hopCount[i] = 0;
+			messageCount[i] = 0;
+			int maxhops = this.select.getDist().getTimeLock(src, dst); //maximal length of path
+			maxHopCount[i] = maxhops;
+			if(tempSum<vals[i]*(1+totalFeeRate))
+			{
+				uselessCnt++;
+				continue;
+			}
 			out = nodess[dst].getOutgoingEdges();
 			tempSum = 0;
 			for (int k = 0; k < out.length; k++) {
@@ -653,7 +718,11 @@ public class RoutePayment extends Metric{
 					tempSum+=pot;
 				}
 			}
-			if(tempSum<vals[i]*(1+totalFeeRate)) continue;
+			if(tempSum<vals[i]*(1+totalFeeRate))
+			{
+				uselessCnt++;
+				continue;
+			}
 			Vector<PartialPath> pps = new Vector<PartialPath>();
 			//some routing algorithm split over multiple dimensions in the beginning (!= splitting during routing)
 			double[] splitVal = this.splitRealities(val, select.getDist().startR, rand);
@@ -667,6 +736,8 @@ public class RoutePayment extends Metric{
 		}
 		//execute payments by time order
 		for (int i = 0; i < totalTime; i++) {
+			//if(i%100==0)
+			//	System.out.println(i/100);
 			//iterate over payments to be handled in one second
 			for (int ii = 0; ii < this.timeQueue[i].size(); ii++) {
 				int id = timeQueue[i].get(ii);
@@ -714,7 +785,33 @@ public class RoutePayment extends Metric{
 							//past.add(cur);
 							for(int l=0;l<partVals.length;l++)
 								tempSum+=partVals[l];
+							oldVals[id] -= (pp.val - tempSum);
+							if(oldVals[id]<vals[id])
+							{
+								//System.out.println("nmd");
+								//failure to find nodes to route to
+								revoked = 1;
+								flags[id] = false;
+								//break;
+								//System.out.println("haha");
+								for (int hh = j+1; hh < pps.size(); hh++) {
+									PartialPath tempp = pps.get(hh);
+									Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
+									tempPAST.add(tempp.node);
+									revoke(tempp.pre,tempp.val,tempp.fee);
+								}
+								for(int hh = 0;hh<next.size();hh++)
+								{
+									PartialPath tempp = next.get(hh);
+									Vector<Integer> tempPAST = (Vector<Integer>) tempp.pre.clone();
+									tempPAST.add(tempp.node);
+									revoke(tempp.pre,tempp.val,tempp.fee);
+								}
+								//recovery to original weights
+								break;
+							}
 							if(tempSum<pp.val) {
+								//System.out.println("haha");
 								Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
 								tempPAST.add(cur);
 								revoke(tempPAST, pp.val - tempSum,pp.fee*(pp.val-tempSum)/pp.val);
@@ -771,10 +868,6 @@ public class RoutePayment extends Metric{
 							}
 						} else {
 							//failure to find nodes to route to
-							if (log) {
-								System.out.println("fail");
-								//throw new IllegalArgumentException();
-							}
 							revoked = 1;
 							flags[id] = false;
 							//break;
@@ -801,6 +894,7 @@ public class RoutePayment extends Metric{
 
 					//revoke too much, impossible to complete, so revoke all
 					if(revoked==0&&vals[id]-sumVal>0.00001) {
+						//System.out.println("???");
 						flags[id] = false;
 						revoked = 1;
 						//System.out.println("nmd");
@@ -874,7 +968,7 @@ public class RoutePayment extends Metric{
 		this.avHopsSucc = this.hopDistributionSucc.getAverage();
 		this.avMess = this.messageDistribution.getAverage();
 		this.avMessSucc = this.messageDistributionSucc.getAverage();
-		this.success = this.success/this.transactions.length;
+		this.success = this.success/(this.transactions.length-uselessCnt);
 		System.out.println(success);
 		this.successFirst = this.successFirst/this.transactions.length;
 		if (rest > 0) {
