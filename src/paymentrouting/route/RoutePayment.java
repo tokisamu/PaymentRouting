@@ -30,10 +30,12 @@ import treeembedding.credit.Transaction;
  */
 public class RoutePayment extends Metric{
 	//Parameters:
-	protected int totalTime = 1000;
+	protected int totalTime = 10000;
+	protected int delay = 50;
+	protected boolean intervalCount = false;
 	protected double cRedundant = 0;
 	protected double feeRate = 0.4;
-	protected double sizeRate = 0.8;
+	protected double sizeRate = 0.4;
 	protected double totalFeeRate = 0.01;
 	protected Random rand; //random seed
 	protected boolean update; //are balances updated after payment or returned to original  
@@ -69,6 +71,8 @@ public class RoutePayment extends Metric{
 	protected int hopCount[];
 	protected int messageCount[];
 	protected int maxHopCount[];
+	protected int lastSuc = 0;
+	protected int lastFail = 0;
 
 	public RoutePayment(PathSelection ps, int trials, boolean up,double redundancy) {
 		this(ps,trials,up,Integer.MAX_VALUE,redundancy);
@@ -136,6 +140,8 @@ public class RoutePayment extends Metric{
 	public void computeData(Graph g, Network n, HashMap<String, Metric> m) {
 		//init values
 		//initialize weights
+		lastFail = 0;
+		lastSuc = 0;
 		if(this.cRedundant>1)
 		{
 			System.out.println("revoke protocol: "+this.cRedundant);
@@ -261,7 +267,7 @@ public class RoutePayment extends Metric{
 			else this.timeQueue[i % totalTime].add(i);
 		}
 
-		for (int i = 0; i < totalTime; i++) {
+		for (int i = 0; i < totalTime+1000; i++) {
 			//System.out.println(this.timeQueue[i].size());
 			for (int ii = 0; ii < this.timeQueue[i].size(); ii++) {
 				int id = timeQueue[i].get(ii);
@@ -373,7 +379,7 @@ public class RoutePayment extends Metric{
 					if(this.flags[id]!=false)
 					{
 						this.storedPPS[id] = pps;
-						this.timeQueue[i + 1].add(id);
+						this.timeQueue[i + delay].add(id);
 					}
 
 					//reached maxhop count -> fail
@@ -429,6 +435,18 @@ public class RoutePayment extends Metric{
 				}
 			}
 			timeQueue[i].clear();
+			if(i%1000==999&&intervalCount==true)
+			{
+				int cnt = 0;
+				for(int tt = 0;tt<this.transactions.length;tt++)
+				{
+					if(flags[tt]==false)
+						cnt++;
+				}
+				System.out.println((this.success-lastSuc)/(cnt+this.success-lastSuc-lastFail));
+				lastSuc = (int) this.success;
+				lastFail = cnt;
+			}
 		}
 
 		//compute final stats
@@ -443,6 +461,7 @@ public class RoutePayment extends Metric{
 		this.avMessSucc = this.messageDistributionSucc.getAverage();
 		this.success = this.success/(this.transactions.length-uselessCnt);
 		System.out.println(success);
+		System.out.println(uselessCnt);
 		this.successFirst = this.successFirst/this.transactions.length;
 		if (rest > 0) {
 		   this.succTime[this.succTime.length-1] = this.succTime[this.succTime.length-1]/rest;
@@ -908,7 +927,7 @@ public class RoutePayment extends Metric{
 					else if(flags[id])
 					{
 						this.storedPPS[id] = pps;
-						this.timeQueue[i+1].add(id);
+						this.timeQueue[i+delay].add(id);
 					}
 
 					if (hopCount[id] == maxHopCount[id] && !pps.isEmpty()) {
@@ -956,6 +975,18 @@ public class RoutePayment extends Metric{
 				}
 			}
 			timeQueue[i].clear();
+			if(i%1000==999&&intervalCount==true)
+			{
+				int cnt = 0;
+				for(int tt = 0;tt<this.transactions.length;tt++)
+				{
+					if(flags[tt]==false)
+						cnt++;
+				}
+				System.out.println((this.success-lastSuc)/(cnt+this.success-lastSuc-lastFail));
+				lastSuc = (int) this.success;
+				lastFail = cnt;
+			}
 		}
 
 		//compute final stats
@@ -970,6 +1001,7 @@ public class RoutePayment extends Metric{
 		this.avMessSucc = this.messageDistributionSucc.getAverage();
 		this.success = this.success/(this.transactions.length-uselessCnt);
 		System.out.println(success);
+		System.out.println(uselessCnt);
 		this.successFirst = this.successFirst/this.transactions.length;
 		if (rest > 0) {
 			this.succTime[this.succTime.length-1] = this.succTime[this.succTime.length-1]/rest;
