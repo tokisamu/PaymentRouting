@@ -107,7 +107,7 @@ public class PaymentTests {
 				System.out.println("epoch " + epoch + ":");
 			}
 		}
-		/*System.out.println("real test");
+		System.out.println("real test");
 		for(int epoch = 0; epoch<10; epoch++) {
 			//generate transformations to add i) capacities and ii) transactions
 			Transformation[] trans = new Transformation[]{new InitCapacities(200, -1, BalDist.EXP),
@@ -166,7 +166,7 @@ public class PaymentTests {
 			//run
 			Series.generate(net, m, 1);
 			System.out.println("epoch "+epoch+":");
-		}*/
+		}
    }
 
 	
