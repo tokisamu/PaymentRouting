@@ -9,6 +9,7 @@ import java.util.Map.Entry;
 
 import gtna.data.Single;
 import gtna.graph.Edge;
+import gtna.graph.Edges;
 import gtna.graph.Graph;
 import gtna.graph.Node;
 import gtna.io.DataWriter;
@@ -30,9 +31,16 @@ import treeembedding.credit.Transaction;
  */
 public class RoutePayment extends Metric{
 	//Parameters:
-	protected int totalTime = 10000;
-	protected int delay = 50;
+	protected int totalTime = 1000;
+	protected int endTime = 1000;
+	protected int delay = 1;
+	protected double imbanlanceRate;
+	protected double occupiedFunds = 0;
+	protected double depletedChannels = 0;
 	protected boolean intervalCount = false;
+	protected boolean uselessCount = false;
+	protected boolean boom = false;
+	protected int boomNumber = 100;
 	protected double cRedundant = 0;
 	protected double feeRate = 0.4;
 	protected double sizeRate = 0.4;
@@ -43,7 +51,7 @@ public class RoutePayment extends Metric{
 	protected boolean log = false; //give detailed output in form of prints 
 	protected PathSelection select; //splitting method  
 	protected CreditLinks edgeweights; //the balances of the channels
-	protected int tInterval = 1000; //default length of an epoch (if you want to see success over time: averages taken for this number of transactions)
+	protected int tInterval = 200; //default length of an epoch (if you want to see success over time: averages taken for this number of transactions)
 	protected int recompute_epoch; //do you recompute routing info periodically all tInterval? (if so, value < Integer.MAX_VALUE, which is default)
 	protected int trials; //number of attempts payment is tried (didn't evaluate more than 1) 
 	
@@ -73,6 +81,9 @@ public class RoutePayment extends Metric{
 	protected int maxHopCount[];
 	protected int lastSuc = 0;
 	protected int lastFail = 0;
+	protected int sourceList[]; //store unfinished payments
+	protected int destList[]; //store unfinished payments
+	protected double valList[]; //store unfinished payments
 
 	public RoutePayment(PathSelection ps, int trials, boolean up,double redundancy) {
 		this(ps,trials,up,Integer.MAX_VALUE,redundancy);
@@ -140,11 +151,20 @@ public class RoutePayment extends Metric{
 	public void computeData(Graph g, Network n, HashMap<String, Metric> m) {
 		//init values
 		//initialize weights
-		lastFail = 0;
-		lastSuc = 0;
+		sourceList = new int[300000];
+		destList = new int[300000];
+		valList = new double[300000];
 		if(this.cRedundant>1)
 		{
+			double temp = this.cRedundant;
+			double temp2 = (temp*100000%1000);
+			temp -= temp2/100000;
+			if(Math.abs((temp*100)%10-1)<0.001) {
+				this.boom = true;
+				this.cRedundant-=0.01;
+			}
 			System.out.println("revoke protocol: "+this.cRedundant);
+
 			computeData2(g,n,m);
 			return;
 		}
@@ -155,6 +175,10 @@ public class RoutePayment extends Metric{
 		BufferedReader in = null;
 		Node[] nodes = g.getNodes();
 		if(nodes.length==6329) {
+			//System.out.println(this.cRedundant);
+			this.sizeRate = ((this.cRedundant*1000)%10)/10;
+			//this.cRedundant-=this.sizeRate/1000;
+			//System.out.println(this.sizeRate);
 			try {
 				in = new BufferedReader(new FileReader("lightning/ln_capacity.txt"));
 				String str;
@@ -174,6 +198,18 @@ public class RoutePayment extends Metric{
 				e.printStackTrace();
 			}
 		}
+		else
+		{
+			Edges allEdges = g.getEdges();
+			for (int iii = 0; iii < allEdges.size(); iii++) {
+				Edge ee = allEdges.getEdges().get(iii);
+				int s1 = ee.getSrc();
+				int s2 = ee.getDst();
+				sourceList[iii] = s1;
+				destList[iii] = s2;
+				valList[iii] = this.computePotential(s1, s2);
+			}
+		}
 		HashMap<Edge, Double> originalAll = new HashMap<Edge, Double>();
 		this.transactions = ((TransactionList) g.getProperty("TRANSACTION_LIST")).getTransactions();
 		int count = this.transactions.length;
@@ -184,8 +220,8 @@ public class RoutePayment extends Metric{
 		this.successFirst = 0;
 		int uselessCnt = 0;
 		this.success = 0;
-		this.timeQueue = new ArrayList[totalTime*2];
-		for (int i = 0; i < totalTime*2; i++)
+		this.timeQueue = new ArrayList[totalTime*2+3000];
+		for (int i = 0; i < totalTime*2+3000; i++)
 			this.timeQueue[i] = new ArrayList<>();
 		this.storedPPS = new Vector[count*2];
 		long[] trys = new long[2];
@@ -267,7 +303,7 @@ public class RoutePayment extends Metric{
 			else this.timeQueue[i % totalTime].add(i);
 		}
 
-		for (int i = 0; i < totalTime+1000; i++) {
+		for (int i = 0; i < endTime; i++) {
 			//System.out.println(this.timeQueue[i].size());
 			for (int ii = 0; ii < this.timeQueue[i].size(); ii++) {
 				int id = timeQueue[i].get(ii);
@@ -333,6 +369,7 @@ public class RoutePayment extends Metric{
 									if (out[k] != dsts[id]) {
 										Vector<Integer> tempPAST = (Vector<Integer>) past.clone();
 										tempPAST.add(cur);
+										//System.out.println(tempPAST.size());
 										//System.out.println(srcs[id]+" to "+dsts[id]+" pre: "+tempPAST.toString());
 										next.add(new PartialPath(out[k], partVals[k]*(1-feeRatio),
 												tempPAST, pp.reality,partVals[k]*feeRatio)); //add new intermediary to path
@@ -435,17 +472,103 @@ public class RoutePayment extends Metric{
 				}
 			}
 			timeQueue[i].clear();
-			if(i%1000==999&&intervalCount==true)
-			{
+			if(i%tInterval==tInterval-1&&intervalCount==true&&i<totalTime) {
 				int cnt = 0;
-				for(int tt = 0;tt<this.transactions.length;tt++)
-				{
-					if(flags[tt]==false)
+				for (int tt = 0; tt < this.transactions.length; tt++) {
+					if (flags[tt] == false)
 						cnt++;
 				}
-				System.out.println((this.success-lastSuc)/(cnt+this.success-lastSuc-lastFail));
+				System.out.println((this.success - lastSuc) / (cnt + this.success - lastSuc - lastFail));
+				//System.out.println();
 				lastSuc = (int) this.success;
 				lastFail = cnt;
+				if (nodes.length == 6329) {
+					double ccnt = 0;
+					try {
+						depletedChannels = 0;
+						imbanlanceRate = 0.0;
+						double imbalance = 0.0;
+						double totalCapacity = 0.0;
+						in = new BufferedReader(new FileReader("lightning/ln_capacity.txt"));
+						String str;
+						while ((str = in.readLine()) != null) {
+							//System.out.println(str);
+							ccnt++;
+							String[] ss = str.split("\\s+");
+							//System.out.println(ss);
+							int s1 = Integer.parseInt(ss[0]);
+							int s2 = Integer.parseInt(ss[1]);
+							double s3 = Double.parseDouble(ss[2]);
+							//System.out.println("ha: "+s1+' '+s2+' '+s3);
+							Edge e = edgeweights.makeEdge(s1, s2);
+							double currentCapacity = this.computePotential(s1, s2);
+							if (currentCapacity < 100)
+								depletedChannels++;
+							imbalance += Math.abs(currentCapacity - s3/2);
+							totalCapacity += s3/2;
+							//edgeweights.setWeight(e, new double[]{0, s3 / 2, s3});
+							//System.out.println(" "+s1+' '+s1+' '+s3/2);
+						}
+						imbanlanceRate = imbalance / totalCapacity;
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+					System.out.println("imbalance rate: " + imbanlanceRate);
+					System.out.println("depleted channels: " + depletedChannels);
+					occupiedFunds = 0;
+					for (int tt = i + 1; tt < i + delay + 10; tt++) {
+						//System.out.println(this.timeQueue[i].size());
+						for (int ttt = 0; ttt < this.timeQueue[tt].size(); ttt++) {
+							int id = timeQueue[tt].get(ttt);
+							Vector<PartialPath> pps = this.storedPPS[id];
+							if (!pps.isEmpty()) {
+								for (int j = 0; j < pps.size(); j++) {
+									PartialPath pp = pps.get(j);
+									occupiedFunds += pp.pre.size() * pp.val;
+									//System.out.println("asd "+pp.val+" "+pp.pre.size());
+								}
+							}
+						}
+					}
+					System.out.println("occupied: " + occupiedFunds);
+				}
+				else
+				{
+					depletedChannels = 0;
+					imbanlanceRate = 0.0;
+					double imbalance = 0.0;
+					double totalCapacity = 0.0;
+					double hahah = 0.0;
+					for(int iii=0; iii<g.getEdges().size();iii++) {
+						int s1 = sourceList[iii];
+						int s2 = destList[iii];
+						double currentCapacity = this.computePotential(s1, s2);
+						imbalance += Math.abs(currentCapacity - valList[iii]);
+						totalCapacity += valList[iii];
+						hahah+=currentCapacity;
+						//edgeweights.setWeight(e, new double[]{0, s3 / 2, s3});
+						//System.out.println(" "+s1+' '+s1+' '+s3/2);
+					}
+					imbanlanceRate = imbalance / totalCapacity;
+					System.out.println("imbalance rate: " + imbanlanceRate);
+					System.out.println("depleted channels: " + depletedChannels);
+					occupiedFunds = 0;
+					for (int tt = i + 1; tt < i + delay + 10; tt++) {
+						//System.out.println(this.timeQueue[i].size());
+						for (int ttt = 0; ttt < this.timeQueue[tt].size(); ttt++) {
+							int id = timeQueue[tt].get(ttt);
+							Vector<PartialPath> pps = this.storedPPS[id];
+							if (!pps.isEmpty()) {
+								for (int j = 0; j < pps.size(); j++) {
+									PartialPath pp = pps.get(j);
+									occupiedFunds += pp.pre.size() * pp.val;
+									//System.out.println("asd "+pp.val+" "+pp.pre.size());
+								}
+							}
+						}
+					}
+					System.out.println("occupied: " + occupiedFunds);
+				}
 			}
 		}
 
@@ -459,9 +582,16 @@ public class RoutePayment extends Metric{
 		this.avHopsSucc = this.hopDistributionSucc.getAverage();
 		this.avMess = this.messageDistribution.getAverage();
 		this.avMessSucc = this.messageDistributionSucc.getAverage();
-		this.success = this.success/(this.transactions.length-uselessCnt);
+		int fcnt = 0;
+		for (int tt = 0; tt < this.transactions.length; tt++) {
+			if (flags[tt] == false)
+				fcnt++;
+		}
+
+		this.success = this.success/(this.success+fcnt);
 		System.out.println(success);
-		System.out.println(uselessCnt);
+		if(uselessCount)
+			System.out.println(uselessCnt);
 		this.successFirst = this.successFirst/this.transactions.length;
 		if (rest > 0) {
 		   this.succTime[this.succTime.length-1] = this.succTime[this.succTime.length-1]/rest;
@@ -637,6 +767,10 @@ public class RoutePayment extends Metric{
 		BufferedReader in = null;
 		Node[] nodes = g.getNodes();
 		if(nodes.length==6329) {
+			if(((this.cRedundant*1000)%10)/10>0) {
+				this.sizeRate = ((this.cRedundant * 1000) % 10) / 10;
+				this.cRedundant -= this.sizeRate/100;
+			}
 			try {
 				in = new BufferedReader(new FileReader("lightning/ln_capacity.txt"));
 				String str;
@@ -656,6 +790,18 @@ public class RoutePayment extends Metric{
 				e.printStackTrace();
 			}
 		}
+		else
+		{
+			Edges allEdges = g.getEdges();
+			for (int iii = 0; iii < allEdges.size(); iii++) {
+				Edge ee = allEdges.getEdges().get(iii);
+				int s1 = ee.getSrc();
+				int s2 = ee.getDst();
+				sourceList[iii] = s1;
+				destList[iii] = s2;
+				valList[iii] = this.computePotential(s1, s2);
+			}
+		}
 		HashMap<Edge, Double> originalAll = new HashMap<Edge, Double>();
 		this.transactions = ((TransactionList) g.getProperty("TRANSACTION_LIST")).getTransactions();
 		int count = this.transactions.length;
@@ -666,8 +812,8 @@ public class RoutePayment extends Metric{
 		this.avMessSucc = 0;
 		this.successFirst = 0;
 		this.success = 0;
-		this.timeQueue = new ArrayList[totalTime*2];
-		for (int i = 0; i < totalTime*2; i++)
+		this.timeQueue = new ArrayList[totalTime*2+3000];
+		for (int i = 0; i < totalTime*2+3000; i++)
 			this.timeQueue[i] = new ArrayList<>();
 		this.storedPPS = new Vector[count*2];
 		long[] trys = new long[2];
@@ -745,8 +891,19 @@ public class RoutePayment extends Metric{
 			Vector<PartialPath> pps = new Vector<PartialPath>();
 			//some routing algorithm split over multiple dimensions in the beginning (!= splitting during routing)
 			double[] splitVal = this.splitRealities(val, select.getDist().startR, rand);
-			for (int a = 0; a < select.getDist().startR; a++) {
-				pps.add(new PartialPath(src, splitVal[a], new Vector<Integer>(), a,splitVal[a]*totalFeeRate));
+			if(!this.boom) {
+				for (int a = 0; a < select.getDist().startR; a++) {
+					pps.add(new PartialPath(src, splitVal[a], new Vector<Integer>(), a, splitVal[a] * totalFeeRate));
+				}
+			}
+			else
+			{
+				for (int a = 0; a < select.getDist().startR; a++) {
+					double pakectSize =  splitVal[a]/this.boomNumber;
+					for(int k=0;k<this.boomNumber;k++) {
+						pps.add(new PartialPath(src, pakectSize, new Vector<Integer>(), a, pakectSize * totalFeeRate));
+					}
+				}
 			}
 			this.storedPPS[i] = pps;
 			if(this.transactions.length<totalTime)
@@ -754,7 +911,7 @@ public class RoutePayment extends Metric{
 			else this.timeQueue[i % totalTime].add(i);
 		}
 		//execute payments by time order
-		for (int i = 0; i < totalTime; i++) {
+		for (int i = 0; i < endTime; i++) {
 			//if(i%100==0)
 			//	System.out.println(i/100);
 			//iterate over payments to be handled in one second
@@ -975,17 +1132,104 @@ public class RoutePayment extends Metric{
 				}
 			}
 			timeQueue[i].clear();
-			if(i%1000==999&&intervalCount==true)
-			{
+			//System.out.println("");
+			if(i%tInterval==tInterval-1&&intervalCount==true&&i<totalTime) {
 				int cnt = 0;
-				for(int tt = 0;tt<this.transactions.length;tt++)
-				{
-					if(flags[tt]==false)
+				for (int tt = 0; tt < this.transactions.length; tt++) {
+					if (flags[tt] == false)
 						cnt++;
 				}
-				System.out.println((this.success-lastSuc)/(cnt+this.success-lastSuc-lastFail));
+				System.out.println((this.success - lastSuc) / (cnt + this.success - lastSuc - lastFail));
+				//System.out.println();
 				lastSuc = (int) this.success;
 				lastFail = cnt;
+				if (nodes.length == 6329) {
+					double ccnt = 0;
+					try {
+						depletedChannels = 0;
+						imbanlanceRate = 0.0;
+						double imbalance = 0.0;
+						double totalCapacity = 0.0;
+						in = new BufferedReader(new FileReader("lightning/ln_capacity.txt"));
+						String str;
+						while ((str = in.readLine()) != null) {
+							//System.out.println(str);
+							ccnt++;
+							String[] ss = str.split("\\s+");
+							//System.out.println(ss);
+							int s1 = Integer.parseInt(ss[0]);
+							int s2 = Integer.parseInt(ss[1]);
+							double s3 = Double.parseDouble(ss[2]);
+							//System.out.println("ha: "+s1+' '+s2+' '+s3);
+							Edge e = edgeweights.makeEdge(s1, s2);
+							double currentCapacity = this.computePotential(s1, s2);
+							if (currentCapacity < 100)
+								depletedChannels++;
+							imbalance += Math.abs(currentCapacity - s3/2);
+							totalCapacity += s3/2;
+							//edgeweights.setWeight(e, new double[]{0, s3 / 2, s3});
+							//System.out.println(" "+s1+' '+s1+' '+s3/2);
+						}
+						imbanlanceRate = imbalance / totalCapacity;
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+					System.out.println("imbalance rate: " + imbanlanceRate);
+					System.out.println("depleted channels: " + depletedChannels);
+					occupiedFunds = 0;
+					for (int tt = i + 1; tt < i + delay + 10; tt++) {
+						//System.out.println(this.timeQueue[i].size());
+						for (int ttt = 0; ttt < this.timeQueue[tt].size(); ttt++) {
+							int id = timeQueue[tt].get(ttt);
+							Vector<PartialPath> pps = this.storedPPS[id];
+							if (!pps.isEmpty()) {
+								for (int j = 0; j < pps.size(); j++) {
+									PartialPath pp = pps.get(j);
+									occupiedFunds += pp.pre.size() * pp.val;
+									//System.out.println("asd "+pp.val+" "+pp.pre.size());
+								}
+							}
+						}
+					}
+					System.out.println("occupied: " + occupiedFunds);
+				}
+				else
+				{
+					depletedChannels = 0;
+					imbanlanceRate = 0.0;
+					double imbalance = 0.0;
+					double totalCapacity = 0.0;
+					double hahah = 0.0;
+					for(int iii=0; iii<g.getEdges().size();iii++) {
+						int s1 = sourceList[iii];
+						int s2 = destList[iii];
+						double currentCapacity = this.computePotential(s1, s2);
+						imbalance += Math.abs(currentCapacity - valList[iii]);
+						totalCapacity += valList[iii];
+						hahah+=currentCapacity;
+						//edgeweights.setWeight(e, new double[]{0, s3 / 2, s3});
+						//System.out.println(" "+s1+' '+s1+' '+s3/2);
+					}
+					imbanlanceRate = imbalance / totalCapacity;
+					System.out.println("imbalance rate: " + imbanlanceRate);
+					System.out.println("depleted channels: " + depletedChannels);
+					occupiedFunds = 0;
+					for (int tt = i + 1; tt < i + delay + 10; tt++) {
+						//System.out.println(this.timeQueue[i].size());
+						for (int ttt = 0; ttt < this.timeQueue[tt].size(); ttt++) {
+							int id = timeQueue[tt].get(ttt);
+							Vector<PartialPath> pps = this.storedPPS[id];
+							if (!pps.isEmpty()) {
+								for (int j = 0; j < pps.size(); j++) {
+									PartialPath pp = pps.get(j);
+									occupiedFunds += pp.pre.size() * pp.val;
+									//System.out.println("asd "+pp.val+" "+pp.pre.size());
+								}
+							}
+						}
+					}
+					System.out.println("occupied: " + occupiedFunds);
+				}
 			}
 		}
 
@@ -999,9 +1243,15 @@ public class RoutePayment extends Metric{
 		this.avHopsSucc = this.hopDistributionSucc.getAverage();
 		this.avMess = this.messageDistribution.getAverage();
 		this.avMessSucc = this.messageDistributionSucc.getAverage();
-		this.success = this.success/(this.transactions.length-uselessCnt);
+		int fcnt = 0;
+		for (int tt = 0; tt < this.transactions.length; tt++) {
+			if (flags[tt] == false)
+				fcnt++;
+		}
+		this.success = this.success/(this.success+fcnt);
 		System.out.println(success);
-		System.out.println(uselessCnt);
+		if(uselessCount)
+			System.out.println(uselessCnt);
 		this.successFirst = this.successFirst/this.transactions.length;
 		if (rest > 0) {
 			this.succTime[this.succTime.length-1] = this.succTime[this.succTime.length-1]/rest;
