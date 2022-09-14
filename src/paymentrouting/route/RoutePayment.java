@@ -31,19 +31,19 @@ import treeembedding.credit.Transaction;
  */
 public class RoutePayment extends Metric{
 	//Parameters:
-	protected int totalTime = 1000;
-	protected int endTime = 1000;
+	protected int totalTime = 3000;
+	protected int endTime = 3000;
 	protected int delay = 1;
 	protected double imbanlanceRate;
 	protected double occupiedFunds = 0;
 	protected double depletedChannels = 0;
-	protected boolean intervalCount = false;
+	protected boolean intervalCount = true;
 	protected boolean uselessCount = false;
 	protected boolean boom = false;
 	protected int boomNumber = 100;
 	protected double cRedundant = 0;
 	protected double feeRate = 0.4;
-	protected double sizeRate = 0.4;
+	protected double sizeRate = 0.6;
 	protected double totalFeeRate = 0.01;
 	protected Random rand; //random seed
 	protected boolean update; //are balances updated after payment or returned to original  
@@ -174,9 +174,11 @@ public class RoutePayment extends Metric{
 		edgeweights = (CreditLinks) g.getProperty("CREDIT_LINKS");
 		BufferedReader in = null;
 		Node[] nodes = g.getNodes();
-		if(nodes.length==6329) {
+		//System.out.println(nodes.length);
+		if(nodes.length==18081) {
 			//System.out.println(this.cRedundant);
-			this.sizeRate = ((this.cRedundant*1000)%10)/10;
+			if(this.cRedundant!=0)
+				this.sizeRate = ((this.cRedundant*1000)%10)/10;
 			//this.cRedundant-=this.sizeRate/1000;
 			//System.out.println(this.sizeRate);
 			try {
@@ -264,7 +266,7 @@ public class RoutePayment extends Metric{
 				}
 			}
 			double val = tr.getVal();
-			if(nodes.length==6329)
+			if(nodes.length==18081)
 				val = tempSum*sizeRate;
 			oldVals[i] = val;
 			boolean s = true; //successful, reset when failure encountered
@@ -482,7 +484,7 @@ public class RoutePayment extends Metric{
 				//System.out.println();
 				lastSuc = (int) this.success;
 				lastFail = cnt;
-				if (nodes.length == 6329) {
+				if (nodes.length == 18081) {
 					double ccnt = 0;
 					try {
 						depletedChannels = 0;
@@ -543,6 +545,8 @@ public class RoutePayment extends Metric{
 						int s1 = sourceList[iii];
 						int s2 = destList[iii];
 						double currentCapacity = this.computePotential(s1, s2);
+						if (currentCapacity < 1)
+							depletedChannels++;
 						imbalance += Math.abs(currentCapacity - valList[iii]);
 						totalCapacity += valList[iii];
 						hahah+=currentCapacity;
@@ -766,7 +770,7 @@ public class RoutePayment extends Metric{
 		edgeweights = (CreditLinks) g.getProperty("CREDIT_LINKS");
 		BufferedReader in = null;
 		Node[] nodes = g.getNodes();
-		if(nodes.length==6329) {
+		if(nodes.length==18081) {
 			if(((this.cRedundant*1000)%10)/10>0) {
 				this.sizeRate = ((this.cRedundant * 1000) % 10) / 10;
 				this.cRedundant -= this.sizeRate/100;
@@ -858,7 +862,7 @@ public class RoutePayment extends Metric{
 				}
 			}
 			double val = tr.getVal();
-			if(nodes.length==6329)
+			if(nodes.length==18081)
 				val = tempSum*sizeRate;
 			vals[i] = val;
 			//add redundancy to payments and store the original value
@@ -1143,7 +1147,7 @@ public class RoutePayment extends Metric{
 				//System.out.println();
 				lastSuc = (int) this.success;
 				lastFail = cnt;
-				if (nodes.length == 6329) {
+				if (nodes.length == 18081) {
 					double ccnt = 0;
 					try {
 						depletedChannels = 0;

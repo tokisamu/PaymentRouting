@@ -47,7 +47,7 @@ public class PaymentTests {
 	}
 	
 	public static void runSimpleTestSynthetic() {
-		for(int i=0;i<10;i++) {
+		/*for(int i=0;i<10;i++) {
 			System.out.println("size test");
 			for (int epoch = 1; epoch < 10; epoch++) {
 				//generate transformations to add i) capacities and ii) transactions
@@ -106,7 +106,7 @@ public class PaymentTests {
 				Series.generate(net, m, 1);
 				System.out.println("epoch " + epoch + ":");
 			}
-		}
+		}*/
 		System.out.println("real test");
 		for(int epoch = 0; epoch<10; epoch++) {
 			//generate transformations to add i) capacities and ii) transactions
@@ -116,7 +116,7 @@ public class PaymentTests {
 					// 15 transactions with expontially distributed values with average 20 (again -1 is variance, not needed for exp),
 					//no cutoff, no concrete timestamp, no restriction to transactions guaranteed to be successful
 			};
-			//Network net = new BarabasiAlbert(10000, 6, trans);//scale-free barabasi-albert graph with 30 nodes, each new node forming three links to existing nodes
+			//Network net = new BarabasiAlbert(1000, 6, trans);//scale-free barabasi-albert graph with 30 nodes, each new node forming three links to existing nodes
 			String file = "lightning/ln.graph";
 			Network net = new ReadableFile("LIGHTNING", "LIGHTNING", file, trans);
 			// generate distance functions
@@ -133,9 +133,9 @@ public class PaymentTests {
 					//new RoutePayment(new SplitIfNecessary(speedyMulti), trials, up, 0), // split if necessary, Interdimensional
 					//new RoutePayment(new SplitIfNecessary(speedyMulti), trials, up, 0),
 					// SpeedyMurmurs
-					//new RoutePayment(new SplitClosest(speedyMulti), trials, up, 0), // split by dist, HopDistance
-					//new RoutePayment(new SplitIfNecessary(speedyMulti), trials, up, 1.0000001),
 					new RoutePayment(new SplitClosest(speedyMulti), trials, up, 0), // split by dist, HopDistance
+					//new RoutePayment(new SplitIfNecessary(speedyMulti), trials, up, 1.0000001),
+					//new RoutePayment(new SplitClosest(speedyMulti), trials, up, 0), // split by dist, HopDistance
 					//new RoutePayment(new SplitAndAdjustSize(speedyMulti), trials, up, 1.0000001),
 					//new RoutePayment(new SplitIfNecessary(speedyMulti), trials, up, 1.0000001),
 					new RoutePayment(new SplitAndAdjustSize(speedyMulti), trials, up, 1.2),
@@ -145,9 +145,9 @@ public class PaymentTests {
 					//new RoutePayment(new SplitAndAdjustSize(speedyMulti), trials, up, 2.6),
 					//new RoutePayment(new SplitAndAdjustSize(speedyMulti), trials, up, 2.8),
 					//new RoutePayment(new SplitAndAdjustSize(speedyMulti), trials, up, 3.0),
-					new RoutePayment(new ForwardDirect(speedyMulti), trials, up, 1.21),
-					new RoutePayment(new ForwardDirect(speedyMulti), trials, up, 1.81),
-					new RoutePayment(new ForwardDirect(speedyMulti), trials, up, 2.41),
+					new RoutePayment(new ForwardDirect(speedyMulti), trials, up, 1.2),
+					new RoutePayment(new ForwardDirect(speedyMulti), trials, up, 1.8),
+					new RoutePayment(new ForwardDirect(speedyMulti), trials, up, 2.4),
 					//new RoutePayment(new SplitClosestAndAdjust(speedyMulti), trials, up, 1.20),
 					//new RoutePayment(new SplitClosestAndAdjust(speedyMulti), trials, up, 1.8),
 					//new RoutePayment(new SplitClosestAndAdjust(speedyMulti), trials, up, 2.4),
